@@ -25,6 +25,17 @@ function playSqueak() {
     audio.play().catch(err => console.log('Audio play failed:', err));
 }
 
+// Play random chalk sound
+function playChalkSound() {
+    if (isMuted || !hasInteracted) return;
+
+    const chalkNum = Math.floor(Math.random() * 4) + 1;
+    const chalkFile = `assets/chalk-0${chalkNum}.wav`;
+    const audio = new Audio(chalkFile);
+    audio.volume = 0.5;
+    audio.play().catch(err => console.log('Chalk audio play failed:', err));
+}
+
 // Unmute rat button interaction
 function setupUnmuteRat() {
     const unmuteButton = document.getElementById('unmuteRat');
@@ -76,10 +87,10 @@ function setupMuteToggle() {
     });
 }
 
-// Initialize Variables: 358
+// Initialize Variables
 let ratsScore = 0;
 let newyorkersScore = 0;
-const processedSteps = new Set();
+const userVotes = {}; // Track user votes per step: { step: 'rats' | 'newyorkers' }
 
 
 // Initialize Scrollama
@@ -158,9 +169,10 @@ function addTally(winner) {
         const newMark = createTallyMark(tallyContainer, ratsScore);
         tallyContainer.appendChild(newMark);
 
-        // Trigger animation
+        // Trigger animation and play chalk sound
         setTimeout(() => {
             newMark.classList.add('animate');
+            playChalkSound();
         }, 50);
 
         ratsScore++;
@@ -170,9 +182,10 @@ function addTally(winner) {
         const newMark = createTallyMark(tallyContainer, newyorkersScore);
         tallyContainer.appendChild(newMark);
 
-        // Trigger animation
+        // Trigger animation and play chalk sound
         setTimeout(() => {
             newMark.classList.add('animate');
+            playChalkSound();
         }, 50);
 
         newyorkersScore++;
@@ -180,56 +193,57 @@ function addTally(winner) {
     }
 }
 
-// Remove tally function
-function removeTally(winner) {
-    if (winner === 'rats') {
-        const tallyContainer = document.querySelector('#ratsTally svg');
-        const marks = tallyContainer.querySelectorAll('.tally-mark');
-        if (marks.length > 0) {
-            marks[marks.length - 1].remove();
-            ratsScore--;
-            document.getElementById('ratsScore').textContent = ratsScore;
+// Handle vote button click
+function handleVote(step, vote, button) {
+    // Check if already voted for this step
+    if (userVotes[step]) {
+        return; // Already voted
+    }
+
+    // Record the vote
+    userVotes[step] = vote;
+
+    // Add tally
+    addTally(vote);
+
+    // Update button states
+    const eventCard = button.closest('.timeline-event');
+    const buttons = eventCard.querySelectorAll('.vote-btn');
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        if (btn === button) {
+            btn.classList.add('selected');
         }
-    } else if (winner === 'newyorkers') {
-        const tallyContainer = document.querySelector('#newyorkersTally svg');
-        const marks = tallyContainer.querySelectorAll('.tally-mark');
-        if (marks.length > 0) {
-            marks[marks.length - 1].remove();
-            newyorkersScore--;
-            document.getElementById('newyorkersScore').textContent = newyorkersScore;
-        }
+    });
+
+    // Update winner title
+    updateWinnerTitle();
+}
+
+// Update winner title based on current scores
+function updateWinnerTitle() {
+    const winnerTitle = document.getElementById('winnerTitle');
+    if (!winnerTitle) return;
+
+    if (ratsScore > newyorkersScore) {
+        winnerTitle.textContent = 'And the winner... Rats??';
+    } else if (newyorkersScore > ratsScore) {
+        winnerTitle.textContent = 'And the winner... New Yorkers??';
+    } else {
+        winnerTitle.textContent = 'And the winner is... No one!';
     }
 }
 
-// Reset tallies function
-function resetTallies() {
-    // Clear SVG containers
-    document.querySelector('#ratsTally svg').innerHTML = '';
-    document.querySelector('#newyorkersTally svg').innerHTML = '';
-
-    // Reset scores
-    ratsScore = 0;
-    newyorkersScore = 0;
-    document.getElementById('ratsScore').textContent = '0';
-    document.getElementById('newyorkersScore').textContent = '0';
-
-    // Clear processed steps
-    processedSteps.clear();
-}
-
-// Rebuild tallies up to current step
-// Rebuild tallies up to current step
-function rebuildTallies(currentStep) {
-    const events = document.querySelectorAll('.timeline-event');
-
-    events.forEach((event) => {
-        const step = parseInt(event.dataset.step);
-
-        if (step <= currentStep && !processedSteps.has(step)) {
-            const winner = event.dataset.winner;
-            addTally(winner);
-            processedSteps.add(step);
-        }
+// Setup vote buttons
+function setupVoteButtons() {
+    const voteButtons = document.querySelectorAll('.vote-btn');
+    voteButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const eventCard = button.closest('.timeline-event');
+            const step = parseInt(eventCard.dataset.step);
+            const vote = button.dataset.vote;
+            handleVote(step, vote, button);
+        });
     });
 }
 
@@ -241,29 +255,11 @@ function handleStepEnter(response) {
     const steps = document.querySelectorAll('.step');
     steps.forEach(step => step.classList.remove('is-active'));
     element.classList.add('is-active');
-
-    const currentStep = parseInt(element.dataset.step);
-
-    // Rebuild tallies based on current position
-    rebuildTallies(currentStep);
 }
 
 // Handle step exit
-// Handle step exit
 function handleStepExit(response) {
-    const { element, index, direction } = response;
-
-    // If scrolling up and exiting from top, remove this step's tally
-    if (direction === 'up') {
-        const currentStep = parseInt(element.dataset.step);
-        const winner = element.dataset.winner;
-
-        // Remove this step's tally if it was processed
-        if (processedSteps.has(currentStep)) {
-            removeTally(winner);
-            processedSteps.delete(currentStep);
-        }
-    }
+    // No automatic tally changes on scroll - user controls votes
 }
 
 // Initialize Scrollama
@@ -456,6 +452,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize unmute rat and mute toggle
     setupUnmuteRat();
     setupMuteToggle();
+
+    // Initialize vote buttons
+    setupVoteButtons();
 
     // Initialize bottom scroll detection for rat swarm
     setupBottomScrollDetection();
